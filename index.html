@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Crocodilos · Flashcards Flutuantes e Giratórios</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(145deg, #1a472a 0%, #0e2a1a 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', 'Poppins', system-ui, 'Montserrat', sans-serif;
+      padding: 20px;
+    }
+
+    .canvas-wrapper {
+      background: rgba(30, 20, 15, 0.3);
+      border-radius: 68px;
+      padding: 20px;
+      backdrop-filter: blur(3px);
+      box-shadow: 0 25px 45px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.1);
+    }
+
+    canvas {
+      display: block;
+      margin: 0 auto;
+      border-radius: 48px;
+      box-shadow: 0 20px 35px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(255, 215, 140, 0.3);
+      cursor: pointer;
+      background: #2b2b1f;
+    }
+
+    .info-panel {
+      text-align: center;
+      margin-top: 24px;
+      font-weight: 500;
+      color: #f9e7c2;
+      text-shadow: 0 2px 3px #1e3a1e;
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(8px);
+      display: inline-block;
+      width: auto;
+      padding: 8px 24px;
+      border-radius: 60px;
+      font-size: 0.9rem;
+      letter-spacing: 0.5px;
+      border: 1px solid rgba(255, 200, 100, 0.5);
+    }
+
+    .info-panel span {
+      font-weight: bold;
+      color: #ffd966;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    @media (max-width: 700px) {
+      canvas {
+        width: 90vw;
+        height: 90vw;
+        max-width: 560px;
+        max-height: 560px;
+      }
+      .info-panel {
+        font-size: 0.75rem;
+        padding: 5px 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="canvas-wrapper">
+    <canvas id="crocCanvas" width="600" height="600"></canvas>
+  </div>
+  <div class="info-panel">
+    🐊 <span>FLUTUAM & VIRAM JUNTOS</span> · passe o mouse · todos levitam e revelam o segredo! · clique para fixar
+  </div>
+</div>
+
+<script>
+  (function(){
+    const canvas = document.getElementById('crocCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const size = 600;
+    canvas.width = size;
+    canvas.height = size;
+    
+    // ----- DADOS DOS FLASHCARDS (TEMA: CROCODILOS) -----
+    const flashcards = [
+      {
+        titulo: "🐊 FORÇA DA MORDIDA",
+        segredo: "🌊 A mordida de um crocodilo pode ultrapassar 3.700 PSI — a mais forte do reino animal!",
+        iconeFront: "💪",
+        corFrente: "#c97e3a",
+        corVerso: "#fef3cf"
+      },
+      {
+        titulo: "🥚 NINHO & FILHOTES",
+        segredo: "🐣 A temperatura do ninho determina o sexo dos filhotes: calor = machos, frio = fêmeas.",
+        iconeFront: "🌡️",
+        corFrente: "#6e9a6a",
+        corVerso: "#fff4dc"
+      },
+      {
+        titulo: "🏞️ MESTRE DA ESPREITA",
+        segredo: "👀 Crocodilos podem ficar submersos por até 2 horas e atacam com precisão relâmpago.",
+        iconeFront: "⚡",
+        corFrente: "#4a82ae",
+        corVerso: "#fff8e7"
+      }
+    ];
+    
+    // Estados dos cards: revelado permanentemente (toggle com clique)
+    let revealedStates = [false, false, false];
+    
+    // Estado de hover coletivo: quando mouse sobre qualquer card, TODOS flutuam e viram (mostram o verso)
+    let globalHoverActive = false;
+    
+    // ----- ANIMAÇÃO DE FLUTUAÇÃO -----
+    // Cada card terá um deslocamento vertical adicional (offsetY) que varia suavemente no tempo
+    // Mesmo quando não há hover, eles flutuam levemente (efeito mágico contínuo)
+    // Quando hover ativo, a amplitude e velocidade da flutuação aumentam para dar ênfase
+    
+    let time = 0;
+    let animationId = null;
+    
+    // Parâmetros de flutuação por card (fases individuais para movimento orgânico)
+    const floatPhases = [0, 1.8, 3.2]; // fases diferentes para cada card (em radianos)
+    let floatOffsets = [0, 0, 0];       // deslocamento Y atual (px)
+    
+    // Posições base dos cards (sem flutuação) - serão recalculadas a cada frame com base na flutuação
+    let baseCardRects = []; // armazena retângulos sem flutuação (x, y base)
+    
+    function updateBaseRects() {
+      const centerX = size/2;
+      const centerY = size/2;
+      const cardSize = 140;
+      const offsets = [
+        { dx: -88, dy: -58 },
+        { dx:  88, dy: -58 },
+        { dx:   0, dy:  70 }
+      ];
+      baseCardRects = offsets.map((off, idx) => ({
+        baseX: centerX + off.dx - cardSize/2,
+        baseY: centerY + off.dy - cardSize/2,
+        w: cardSize,
+        h: cardSize,
+        idx: idx
+      }));
+    }
+    updateBaseRects();
+    
+    // Retângulos atuais (com flutuação aplicada)
+    let currentCardRects = [];
+    
+    function updateCurrentRects() {
+      currentCardRects = baseCardRects.map((rect, i) => ({
+        x: rect.baseX,
+        y: rect.baseY + floatOffsets[i],
+        w: rect.w,
+        h: rect.h,
+        idx: i
+      }));
+    }
+    
+    // ----- FUNÇÃO PARA ATUALIZAR FLUTUAÇÃO (chamada a cada frame) -----
+    function updateFloatAnimation() {
+      // Incrementa tempo
+      time += 0.025; // velocidade suave da animação
+      
+      // Para cada card, calcular deslocamento Y baseado em seno
+      for (let i = 0; i < 3; i++) {
+        // Amplitude: se hover ativo, flutuação mais intensa (8px), senão suave (4px)
+        const amplitude = globalHoverActive ? 10 : 5;
+        // Velocidade levemente aumentada no hover
+        const speed = globalHoverActive ? 1.6 : 1.0;
+        // Movimento senoidal com fase individual
+        const floatValue = Math.sin(time * speed + floatPhases[i]) * amplitude;
+        floatOffsets[i] = floatValue;
+      }
+      
+      // Atualizar retângulos atuais com os novos offsets
+      updateCurrentRects();
+      
+      // Re-renderizar o canvas
+      renderScene();
+      
+      // Continuar animação
+      animationId = requestAnimationFrame(updateFloatAnimation);
+    }
+    
+    // ----- DESENHO DO CÍRCULO OCO (mantido detalhado) -----
+    function drawHollowCircle() {
+      const centerX = size/2;
+      const centerY = size/2;
+      const radiusOuter = 260;
+      const radiusInner = 170;
+      
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 16;
+      ctx.shadowOffsetX = 4;
+      ctx.shadowOffsetY = 4;
+      
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radiusOuter, 0, Math.PI * 2);
+      ctx.arc(centerX, centerY, radiusInner, 0, Math.PI * 2, true);
+      ctx.fillStyle = "#2c2b1e";
+      ctx.fill("evenodd");
+      
+      ctx.shadowBlur = 5;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#e9bc7d";
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radiusOuter, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radiusInner, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      for(let i = 1; i <= 3; i++) {
+        const r = radiusInner + (radiusOuter - radiusInner) * (i / 4);
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, r, 0, Math.PI * 2);
+        ctx.strokeStyle = "#b48b4b";
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+      
+      ctx.fillStyle = "#ba8a48";
+      for(let ang = 0; ang < 360; ang += 22.5) {
+        const rad = ang * Math.PI/180;
+        const x1 = centerX + (radiusOuter - 8) * Math.cos(rad);
+        const y1 = centerY + (radiusOuter - 8) * Math.sin(rad);
+        const x2 = centerX + (radiusOuter + 4) * Math.cos(rad + 0.12);
+        const y2 = centerY + (radiusOuter + 4) * Math.sin(rad + 0.12);
+        const x3 = centerX + (radiusOuter + 4) * Math.cos(rad - 0.12);
+        const y3 = centerY + (radiusOuter + 4) * Math.sin(rad - 0.12);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x3, y3);
+        ctx.fillStyle = "#d9a066";
+        ctx.fill();
+      }
+      
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radiusInner - 2, 0, Math.PI * 2);
+      ctx.fillStyle = "#3b3a2c";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radiusInner - 6, 0, Math.PI * 2);
+      ctx.fillStyle = "#4f4d38";
+      ctx.fill();
+      
+      ctx.beginPath();
+      for(let ang = 0; ang < 360; ang += 30) {
+        const rad = ang * Math.PI/180;
+        const startX = centerX + (radiusInner + 8) * Math.cos(rad);
+        const startY = centerY + (radiusInner + 8) * Math.sin(rad);
+        const endX = centerX + (radiusOuter - 10) * Math.cos(rad);
+        const endY = centerY + (radiusOuter - 10) * Math.sin(rad);
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.strokeStyle = "#ccaa6e";
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+      }
+    }
+    
+    // Helper para quebra de texto
+    function wrapText(ctx, text, maxWidth) {
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = '';
+      for(let i = 0; i < words.length; i++) {
+        let testLine = currentLine + (currentLine ? ' ' : '') + words[i];
+        let metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine.length > 0) {
+          lines.push(currentLine);
+          currentLine = words[i];
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if(currentLine) lines.push(currentLine);
+      return lines;
+    }
+    
+    // Desenha um flashcard com efeito de "virada" e flutuação já aplicada na posição
+    function drawFlashcard(rect, index) {
+      const { x, y, w, h } = rect;
+      const card = flashcards[index];
+      const isRevealedPermanently = revealedStates[index];
+      // Mostrar verso se: hover coletivo ativo OU card fixado (clicado)
+      const showBack = globalHoverActive || isRevealedPermanently;
+      
+      ctx.save();
+      
+      // Efeito de sombra flutuante (mais pronunciada no hover)
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = globalHoverActive ? 18 : 10;
+      ctx.shadowOffsetX = globalHoverActive ? 6 : 3;
+      ctx.shadowOffsetY = globalHoverActive ? 8 : 4;
+      
+      // Adicionar um pequeno efeito de rotação/oscilação no hover (flutuação com leve rotação)
+      // Vamos aplicar uma pequena rotação baseada no offsetY e no hover para dar sensação de "flutuar e virar"
+      let rotation = 0;
+      if (globalHoverActive) {
+        // Rotação suave baseada no seno do tempo + índice
+        const rotAmplitude = 0.03; // ~1.7 graus
+        rotation = Math.sin(time * 2.5 + index) * rotAmplitude;
+      }
+      
+      // Se houver rotação, transladar para o centro do card, rotacionar, e desenhar
+      if (rotation !== 0) {
+        const cx = x + w/2;
+        const cy = y + h/2;
+        ctx.translate(cx, cy);
+        ctx.rotate(rotation);
+        ctx.translate(-cx, -cy);
+      }
+      
+      // Desenhar fundo com cantos arredondados
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 16);
+      
+      let grad;
+      if (showBack) {
+        grad = ctx.createLinearGradient(x, y, x + w, y + h);
+        grad.addColorStop(0, card.corVerso || "#fff2da");
+        grad.addColorStop(1, "#ffe8c7");
+        ctx.fillStyle = grad;
+      } else {
+        grad = ctx.createLinearGradient(x, y, x + w, y + h);
+        grad.addColorStop(0, card.corFrente || "#c97e3a");
+        grad.addColorStop(1, "#a5682e");
+        ctx.fillStyle = grad;
+      }
+      ctx.fill();
+      
+      // Borda com efeito glow no hover
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 16);
+      ctx.lineWidth = globalHoverActive ? 3.5 : 2.5;
+      ctx.strokeStyle = showBack ? "#d4a373" : "#f7cd8c";
+      if (globalHoverActive) {
+        ctx.strokeStyle = "#ffdd99";
+        // Glow adicional
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = "#ffcc77";
+      }
+      ctx.stroke();
+      
+      // Conteúdo textual
+      ctx.textAlign = "center";
+      ctx.shadowBlur = 3;
+      ctx.shadowColor = "rgba(0,0,0,0.25)";
+      
+      if (showBack) {
+        // VERSO: mostra a informação secreta
+        const secretText = card.segredo;
+        ctx.font = `500 13px "Segoe UI", "Poppins"`;
+        ctx.fillStyle = "#2a2418";
+        const lines = wrapText(ctx, secretText, w - 24);
+        let lineY = y + 38;
+        for (let line of lines) {
+          if (lineY + 20 > y + h - 18) break;
+          ctx.fillText(line, x + w/2, lineY);
+          lineY += 19;
+        }
+        // Ícone decorativo
+        ctx.font = `28px "Segoe UI Emoji"`;
+        ctx.fillStyle = "#8b5a2b";
+        ctx.fillText("🐊", x + w - 30, y + 42);
+        ctx.font = `10px "Segoe UI"`;
+        ctx.fillStyle = "#7e5a38";
+        ctx.fillText("clique para fechar", x + w/2, y + h - 12);
+      } else {
+        // FRENTE: título + ícone
+        let frontTitle = card.titulo;
+        ctx.font = `bold 15px "Segoe UI", "Poppins"`;
+        ctx.fillStyle = "#fff3e0";
+        let displayTitle = frontTitle.length > 18 ? frontTitle.slice(0,16)+".." : frontTitle;
+        ctx.fillText(displayTitle, x + w/2, y + 48);
+        ctx.font = `42px "Segoe UI Emoji"`;
+        ctx.fillStyle = "#ffefbf";
+        ctx.fillText(card.iconeFront, x + w/2, y + 108);
+        ctx.font = `10px "Segoe UI"`;
+        ctx.fillStyle = "#ffefcf";
+        ctx.fillText("🐊 flutua e vira", x + w/2, y + h - 12);
+      }
+      
+      // Restaurar transformações (caso tenha rotacionado)
+      ctx.restore();
+      
+      // Desenhar uma pequena sombra adicional "flutuante" (rastro) se hover ativo
+      if (globalHoverActive) {
+        ctx.save();
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.roundRect(x + 3, y + h + 4, w - 6, 6, 4);
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    
+    // Registrar roundRect
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        if (w < 2 * r) r = w / 2;
+        if (h < 2 * r) r = h / 2;
+        this.moveTo(x+r, y);
+        this.lineTo(x+w-r, y);
+        this.quadraticCurveTo(x+w, y, x+w, y+r);
+        this.lineTo(x+w, y+h-r);
+        this.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+        this.lineTo(x+r, y+h);
+        this.quadraticCurveTo(x, y+h, x, y+h-r);
+        this.lineTo(x, y+r);
+        this.quadraticCurveTo(x, y, x+r, y);
+        return this;
+      };
+    }
+    
+    // ----- RENDER COMPLETO -----
+    function renderScene() {
+      ctx.clearRect(0, 0, size, size);
+      // Fundo com textura de pântano/jungle
+      ctx.fillStyle = "#2c2b1f";
+      ctx.fillRect(0, 0, size, size);
+      for(let i=0;i<160;i++) {
+        ctx.fillStyle = `rgba(100, 85, 50, 0.12)`;
+        ctx.beginPath();
+        ctx.arc(23 + (i*37)%size, 17 + (i*23)%size, 2, 0, Math.PI*2);
+        ctx.fill();
+      }
+      
+      drawHollowCircle();
+      
+      // Desenhar flashcards usando as posições atuais (com flutuação)
+      for (let i = 0; i < currentCardRects.length; i++) {
+        drawFlashcard(currentCardRects[i], i);
+      }
+      
+      // Olho central animado (crocodilo observando)
+      ctx.beginPath();
+      ctx.arc(size/2, size/2, 18, 0, Math.PI*2);
+      ctx.fillStyle = "#c99a54";
+      ctx.shadowBlur = 6;
+      ctx.fill();
+      ctx.fillStyle = "#4a2e12";
+      ctx.beginPath();
+      ctx.arc(size/2 - 2 + Math.sin(time * 1.5) * 1.5, size/2 - 1 + Math.cos(time * 1.8) * 1, 6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = "white";
+      ctx.beginPath();
+      ctx.arc(size/2 - 4 + Math.sin(time * 1.5) * 1, size/2 - 3 + Math.cos(time * 1.8) * 0.8, 2.2, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = "#000";
+      ctx.beginPath();
+      ctx.arc(size/2 - 4.5 + Math.sin(time * 1.5) * 1, size/2 - 3.2 + Math.cos(time * 1.8) * 0.8, 1, 0, Math.PI*2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    
+    // ----- INTERAÇÕES: HOVER E CLICK -----
+    function handleMouseMove(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      
+      let mouseX = (e.clientX - rect.left) * scaleX;
+      let mouseY = (e.clientY - rect.top) * scaleY;
+      mouseX = Math.min(Math.max(0, mouseX), size);
+      mouseY = Math.min(Math.max(0, mouseY), size);
+      
+      let isOverAnyCard = false;
+      for (let i = 0; i < currentCardRects.length; i++) {
+        const r = currentCardRects[i];
+        if (mouseX >= r.x && mouseX <= r.x + r.w && mouseY >= r.y && mouseY <= r.y + r.h) {
+          isOverAnyCard = true;
+          break;
+        }
+      }
+      
+      // Atualiza hover global (todos flutuam mais forte e viram)
+      if (isOverAnyCard !== globalHoverActive) {
+        globalHoverActive = isOverAnyCard;
+        // Não precisa re-render imediato pois a animação já está rodando e vai pegar o novo estado
+        // Mas vamos forçar um frame extra para resposta instantânea
+        renderScene();
+      }
+    }
+    
+    function handleClick(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      let clickX = (e.clientX - rect.left) * scaleX;
+      let clickY = (e.clientY - rect.top) * scaleY;
+      clickX = Math.min(Math.max(0, clickX), size);
+      clickY = Math.min(Math.max(0, clickY), size);
+      
+      // Verificar clique nos retângulos atuais (com flutuação)
+      for (let i = 0; i < currentCardRects.length; i++) {
+        const r = currentCardRects[i];
+        if (clickX >= r.x && clickX <= r.x + r.w && clickY >= r.y && clickY <= r.y + r.h) {
+          revealedStates[i] = !revealedStates[i];
+          renderScene();
+          break;
+        }
+      }
+    }
+    
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('click', handleClick);
+    canvas.addEventListener('mouseleave', () => {
+      if (globalHoverActive) {
+        globalHoverActive = false;
+        renderScene();
+      }
+    });
+    
+    // Inicializar animação de flutuação contínua
+    updateBaseRects();
+    updateCurrentRects();
+    animationId = requestAnimationFrame(updateFloatAnimation);
+    
+    // Cleanup hipotético (não necessário, mas elegante)
+    window.addEventListener('beforeunload', () => {
+      if (animationId) cancelAnimationFrame(animationId);
+    });
+    
+    // Ajuste caso redimensione (manter base retângulos)
+    window.addEventListener('resize', () => {
+      // Recalcula apenas se necessário (baseRects já está fixo, mas garantir)
+      renderScene();
+    });
+    
+    // Primeiro render
+    renderScene();
+  })();
+</script>
+</body>
+</html>
